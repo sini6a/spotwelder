@@ -1,0 +1,4 @@
+(fp_lib_table
+	(version 7)
+	(lib (name "SpotWelderFootprints") (type "KiCad") (uri "${KIPRJMOD}/SpotWelderFootprints.pretty") (options "") (descr ""))
+)
