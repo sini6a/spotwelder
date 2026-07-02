@@ -6132,7 +6132,7 @@
 				)
 			)
 		)
-		(property "Footprint" "TestPoint:TestPoint_Plated_Hole_D3.0mm"
+		(property "Footprint" "MountingHole:MountingHole_4mm_Pad_Via"
 			(at 36.83 69.85 0)
 			(hide yes)
 			(show_name no)
@@ -7858,7 +7858,7 @@
 				)
 			)
 		)
-		(property "Footprint" "TestPoint:TestPoint_Plated_Hole_D3.0mm"
+		(property "Footprint" "MountingHole:MountingHole_4mm_Pad_Via"
 			(at 27.94 57.15 0)
 			(hide yes)
 			(show_name no)
@@ -9717,7 +9717,7 @@
 				)
 			)
 		)
-		(property "Footprint" "TestPoint:TestPoint_Plated_Hole_D3.0mm"
+		(property "Footprint" "MountingHole:MountingHole_4mm_Pad_Via"
 			(at 162.56 25.4 0)
 			(hide yes)
 			(show_name no)
