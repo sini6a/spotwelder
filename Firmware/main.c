@@ -1,3 +1,4 @@
+
 /*
  * Datakonsulten Spot Welder - ATtiny13-20P firmware
  *
@@ -22,24 +23,31 @@
                               Makefile `fuses` / `fuses-fast` targets. */
 
 #include <avr/io.h>
+#include <avr/eeprom.h>
 #include <util/delay.h>
 
 /* ===================== USER CONFIGURATION ===================== */
 
 /* --- Weld pulse timing (milliseconds) --- */
-#define WELD_PULSE_MS          18   /* Main weld pulse duration */
+#define WELD_PULSE_MIN_MS       1   /* Lowest selectable main-pulse duration */
+#define WELD_PULSE_MAX_MS      10   /* Highest selectable main-pulse duration */
+#define WELD_PULSE_DEFAULT_MS  5   /* Used when EEPROM contains an invalid value */
+
+#define SETTINGS_BUTTON_MS      30   /* TP4 press and release debounce time */
+#define SETTING_BLINK_ON_MS     80   /* LED-on time for each indication blink */
+#define SETTING_BLINK_OFF_MS   120   /* LED-off time between indication blinks */
 #define USE_DOUBLE_PULSE         1   /* 1 = fire a short pre-pulse before the main pulse,
                                          0 = single pulse only */
-#define PRE_PULSE_MS              3   /* Pre-pulse duration (seats/cleans the tips on the
+#define PRE_PULSE_MS              1   /* Pre-pulse duration (seats/cleans the tips on the
                                          workpiece before the main weld). Only used if
                                          USE_DOUBLE_PULSE == 1 */
-#define PULSE_GAP_MS              80   /* Gap between pre-pulse and main pulse */
+#define PULSE_GAP_MS              50   /* Gap between pre-pulse and main pulse */
 
 /* --- Safety / re-trigger protection --- */
 #define WELD_COOLDOWN_MS        800   /* Minimum time after a weld fires before another can
                                          start, even if the trigger is still active */
-#define TRIGGER_DEBOUNCE_MS      15   /* Debounce time applied to both trigger inputs */
-#define REQUIRE_TRIGGER_RELEASE   1   /* 1 = trigger (button or tip contact) must go inactive
+#define TRIGGER_DEBOUNCE_MS      15   /* Stability time required for the PC817 weld trigger */
+#define REQUIRE_TRIGGER_RELEASE   1   /* 1 = trigger (tip contact) must go inactive
                                          before the welder re-arms; strongly recommended -
                                          prevents continuous arcing/welding while the tips
                                          are left resting on the workpiece. 0 = re-arm
@@ -47,19 +55,35 @@
 
 /* --- Feedback --- */
 #define BEEP_ON_WELD_MS           60   /* Buzzer beep length right after a weld pulse fires */
-#define BEEP_ON_POWERUP_MS        80   /* Startup self-test beep length */
 #define LED_BLINK_POWERUP_MS     150   /* Startup LED blink length */
-#define BUZZER_ACTIVE_TYPE         1   /* 1 = self-oscillating "active" buzzer - just needs
+#define BUZZER_ACTIVE_TYPE         0   /* 1 = self-oscillating "active" buzzer - just needs
                                          DC applied (matches BZ1 being wired directly to the
                                          GPIO with no series resistor/transistor).
                                          0 = passive piezo - GPIO square-wave drive at
                                          BUZZER_TONE_HZ is generated instead. */
-#define BUZZER_TONE_HZ           2730   /* Tone frequency used only if BUZZER_ACTIVE_TYPE == 0 */
+#define BUZZER_TONE_HZ           4000   /* Tone frequency used only if BUZZER_ACTIVE_TYPE == 0 */
+/*
+ * Timer0 uses a divide-by-8 clock.
+ *
+ * Output frequency:
+ * F_CPU / (2 × 8 × (OCR0A + 1))
+ *
+ * The calculation is done at compile time, so it does not consume
+ * runtime flash code for division.
+ */
+#define TONE_OCR(frequency) \
+    ((uint8_t)(((F_CPU + (8UL * (frequency))) / (16UL * (frequency))) - 1UL))
 
 /* Hard ceiling - refuses to compile an accidentally dangerous pulse length.
    Raise only if you really know what you are doing. */
-#if (WELD_PULSE_MS + PRE_PULSE_MS) > 500
-#error "Combined weld pulse length exceeds the 500ms safety ceiling"
+#if USE_DOUBLE_PULSE
+    #if (WELD_PULSE_MAX_MS + PRE_PULSE_MS) > 500
+        #error "Maximum combined weld pulse exceeds the 500ms safety ceiling"
+    #endif
+#else
+    #if WELD_PULSE_MAX_MS > 500
+        #error "Maximum weld pulse exceeds the 500ms safety ceiling"
+    #endif
 #endif
 
 /* ================================================================= */
@@ -67,7 +91,7 @@
 /* --- Pin assignments (see header comment for derivation) --- */
 #define PIN_BUZZER  PB0
 #define PIN_LED     PB1
-#define PIN_BTN     PB2   /* manual trigger, TP4 */
+#define PIN_BTN     PB2   /* TP4 weld-duration settings button, active LOW */
 #define PIN_OPTO    PB3   /* automatic tip-touch trigger, via U4/PC817 */
 #define PIN_WELD    PB4   /* MOSFET bank enable, via U1/MCP1407 */
 
@@ -81,12 +105,73 @@ static void delay_ms(uint16_t ms)
     }
 }
 
+static uint8_t EEMEM eeprom_weld_pulse_ms;
+static uint8_t weld_pulse_ms;
+
 static inline void weld_on(void)  { PORTB |=  (1 << PIN_WELD); }
 static inline void weld_off(void) { PORTB &= ~(1 << PIN_WELD); }
 static inline void led_on(void)   { PORTB |=  (1 << PIN_LED); }
 static inline void led_off(void)  { PORTB &= ~(1 << PIN_LED); }
 static inline void buzzer_on(void)  { PORTB |=  (1 << PIN_BUZZER); }
 static inline void buzzer_off(void) { PORTB &= ~(1 << PIN_BUZZER); }
+
+static void load_weld_setting(void)
+{
+    uint8_t saved_value = eeprom_read_byte(&eeprom_weld_pulse_ms);
+
+    if ((saved_value < WELD_PULSE_MIN_MS) ||
+        (saved_value > WELD_PULSE_MAX_MS)) {
+        weld_pulse_ms = WELD_PULSE_DEFAULT_MS;
+    } else {
+        weld_pulse_ms = saved_value;
+    }
+}
+
+/*
+ * Play a tone using Timer0 and the OC0A hardware output on PB0.
+ *
+ * PB0 is OC0A on the ATtiny13. Timer0 toggles the pin automatically,
+ * so the CPU only has to wait for the requested duration.
+ */
+static void passive_tone(uint8_t timer_value, uint16_t duration_ms)
+{
+    /* Make sure the buzzer begins LOW. */
+    buzzer_off();
+
+    /* Stop and reset Timer0 before configuring it. */
+    TCCR0A = 0;
+    TCCR0B = 0;
+    TCNT0 = 0;
+
+    /* Set the requested frequency. */
+    OCR0A = timer_value;
+
+    /*
+     * CTC mode:
+     * WGM01 = 1
+     *
+     * Toggle OC0A/PB0 each time the timer reaches OCR0A:
+     * COM0A0 = 1
+     */
+    TCCR0A = (1 << COM0A0) | (1 << WGM01);
+
+    /*
+     * Start Timer0 with clock divided by 8:
+     * CS01 = 1
+     */
+    TCCR0B = (1 << CS01);
+
+    delay_ms(duration_ms);
+
+    /* Stop Timer0. */
+    TCCR0B = 0;
+
+    /* Disconnect Timer0 from PB0. */
+    TCCR0A = 0;
+
+    /* Guarantee that the buzzer finishes LOW. */
+    buzzer_off();
+}
 
 static void beep(uint16_t ms)
 {
@@ -95,36 +180,102 @@ static void beep(uint16_t ms)
     delay_ms(ms);
     buzzer_off();
 #else
-    /* Passive piezo: generate a square wave at BUZZER_TONE_HZ for `ms` milliseconds. */
-    uint16_t half_period_us = 500000UL / BUZZER_TONE_HZ;
-    uint32_t toggles = ((uint32_t)ms * 1000UL) / half_period_us;
-    for (uint32_t i = 0; i < toggles; i++) {
-        PORTB ^= (1 << PIN_BUZZER);
-        _delay_us(half_period_us);
-    }
-    buzzer_off();
+    passive_tone(TONE_OCR(BUZZER_TONE_HZ), ms);
 #endif
 }
 
-/* Active-LOW: true if either the manual button or the opto auto-trigger is asserted. */
-static inline uint8_t trigger_active(void)
+static void welcome_chirp(void)
 {
-    return ((PINB & (1 << PIN_BTN)) == 0) || ((PINB & (1 << PIN_OPTO)) == 0);
+#if BUZZER_ACTIVE_TYPE
+    /*
+     * An active buzzer cannot change pitch, so use two short beeps.
+     */
+    beep(60);
+    delay_ms(40);
+    beep(100);
+#else
+    /*
+     * Rising three-note startup chirp:
+     *
+     * Approximately 2 kHz → 3 kHz → 4 kHz
+     */
+
+    passive_tone(TONE_OCR(2000UL), 45);
+    delay_ms(20);
+
+    passive_tone(TONE_OCR(3000UL), 45);
+    delay_ms(20);
+
+    passive_tone(TONE_OCR(4000UL), 100);
+#endif
+}
+
+static inline uint8_t weld_trigger_active(void)
+{
+    return ((PINB & (1 << PIN_OPTO)) == 0); /* PC817 triggers welding */
+}
+
+static inline uint8_t settings_button_active(void)
+{
+    return ((PINB & (1 << PIN_BTN)) == 0);  /* TP4 changes weld duration */
+}
+
+static void show_weld_setting(void)
+{
+    uint8_t blinks = weld_pulse_ms;
+
+    while (blinks--) {
+        led_on();
+        beep(SETTING_BLINK_ON_MS);
+
+        led_off();
+        delay_ms(SETTING_BLINK_OFF_MS);
+    }
+}
+
+static void handle_settings_button(void)
+{
+    delay_ms(SETTINGS_BUTTON_MS);
+
+    if (!settings_button_active()) {
+        return;                             /* Ignore a short noise pulse */
+    }
+
+    while (settings_button_active()) {
+        /* Wait for TP4 to be released */
+    }
+
+    delay_ms(SETTINGS_BUTTON_MS);           /* Debounce the release */
+
+    weld_pulse_ms++;
+
+    if (weld_pulse_ms > WELD_PULSE_MAX_MS) {
+        weld_pulse_ms = WELD_PULSE_MIN_MS;
+    }
+
+    eeprom_update_byte(&eeprom_weld_pulse_ms, weld_pulse_ms);
+
+    show_weld_setting();
 }
 
 static void fire_weld(void)
 {
-    weld_on();
 #if USE_DOUBLE_PULSE
-    delay_ms(PRE_PULSE_MS);
-    weld_off();
-    delay_ms(PULSE_GAP_MS);
-    weld_on();
+    if (weld_pulse_ms >= 3) {
+        weld_on();
+        delay_ms(PRE_PULSE_MS);
+        weld_off();
+
+        delay_ms(PULSE_GAP_MS);
+    }
 #endif
-    delay_ms(WELD_PULSE_MS);
+
+    weld_on();
+    delay_ms(weld_pulse_ms);
     weld_off();
 
     beep(BEEP_ON_WELD_MS);
+
     led_on();
     delay_ms(60);
     led_off();
@@ -133,7 +284,7 @@ static void fire_weld(void)
 static void power_up_selftest(void)
 {
     led_on();
-    beep(BEEP_ON_POWERUP_MS);
+    welcome_chirp();
     delay_ms(LED_BLINK_POWERUP_MS);
     led_off();
 }
@@ -143,36 +294,44 @@ int main(void)
     /* Force the weld output low before touching anything else - this is the first thing
        that runs after reset, ahead of any other setup. R16 on the board does the same
        thing in hardware as a backstop. */
-    DDRB |= (1 << PIN_WELD);
     PORTB &= ~(1 << PIN_WELD);
-
+    DDRB |= (1 << PIN_WELD);
+    
     /* Remaining outputs. */
-    DDRB |= (1 << PIN_LED) | (1 << PIN_BUZZER);
     PORTB &= ~((1 << PIN_LED) | (1 << PIN_BUZZER));
+    DDRB |= (1 << PIN_LED) | (1 << PIN_BUZZER);
 
     /* Trigger inputs, with internal pull-ups enabled alongside the external R6/R7
        pull-ups for extra noise immunity. */
-    DDRB &= ~((1 << PIN_BTN) | (1 << PIN_OPTO));
     PORTB |= (1 << PIN_BTN) | (1 << PIN_OPTO);
+    DDRB &= ~((1 << PIN_BTN) | (1 << PIN_OPTO));
 
     ADCSRA &= ~(1 << ADEN); /* ADC unused - save power */
 
+    load_weld_setting();
     power_up_selftest();
 
-    for (;;) {
-        if (trigger_active()) {
-            delay_ms(TRIGGER_DEBOUNCE_MS);
-            if (trigger_active()) {
-                fire_weld();
-                delay_ms(WELD_COOLDOWN_MS);
+for (;;) {
+    if (settings_button_active()) {
+        handle_settings_button();
+        continue;
+    }
+
+    if (weld_trigger_active()) {
+        delay_ms(TRIGGER_DEBOUNCE_MS);
+
+        if (weld_trigger_active()) {
+            fire_weld();
+            delay_ms(WELD_COOLDOWN_MS);
+
 #if REQUIRE_TRIGGER_RELEASE
-                while (trigger_active()) {
-                    /* Hold here until the button is released / tips are lifted off
-                       the workpiece before re-arming. */
-                }
-                delay_ms(TRIGGER_DEBOUNCE_MS);
-#endif
+            while (weld_trigger_active()) {
+                /* Wait until the welding probes are lifted */
             }
+
+            delay_ms(TRIGGER_DEBOUNCE_MS);
+#endif
+              }
         }
     }
 }
