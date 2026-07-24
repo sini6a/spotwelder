@@ -3461,6 +3461,12 @@
 		(uuid "679e8b59-1bfb-43db-8187-40d07f77363d")
 	)
 	(junction
+		(at 111.76 168.91)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "6b58a8eb-94b8-4087-abb2-c69c0b781f6d")
+	)
+	(junction
 		(at 134.62 39.37)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -3657,6 +3663,12 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "fc9da277-1b0d-4696-a2fe-c78c4f3fab98")
+	)
+	(junction
+		(at 147.32 173.99)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "fe3bd0ca-6965-4585-b42e-62f887d93fc0")
 	)
 	(wire
 		(pts
@@ -3927,6 +3939,16 @@
 			(type default)
 		)
 		(uuid "2140c996-c14e-49ec-8401-58c0e8e4db5d")
+	)
+	(wire
+		(pts
+			(xy 111.76 168.91) (xy 129.54 168.91)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "25ea8eed-e79b-46b4-9115-b0ab3ba9c016")
 	)
 	(wire
 		(pts
@@ -4830,6 +4852,16 @@
 	)
 	(wire
 		(pts
+			(xy 147.32 168.91) (xy 147.32 173.99)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a3da291a-89f3-4581-8039-4698b122d2c1")
+	)
+	(wire
+		(pts
 			(xy 162.56 129.54) (xy 171.45 129.54)
 		)
 		(stroke
@@ -5057,6 +5089,16 @@
 			(type default)
 		)
 		(uuid "c939e807-31cb-4a59-abb4-b4598d31ce9a")
+	)
+	(wire
+		(pts
+			(xy 139.7 168.91) (xy 147.32 168.91)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "cc49dcad-19e6-4f17-b51b-1dcfd6297cd9")
 	)
 	(wire
 		(pts
@@ -7359,10 +7401,9 @@
 		(on_board yes)
 		(in_pos_files yes)
 		(dnp no)
-		(fields_autoplaced yes)
 		(uuid "675604d3-062f-48a5-a5f7-ab5077bcd344")
 		(property "Reference" "TP4"
-			(at 134.62 168.91 0)
+			(at 125.476 171.196 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -7371,8 +7412,8 @@
 				)
 			)
 		)
-		(property "Value" "TestPoint_2Pole"
-			(at 134.62 171.45 0)
+		(property "Value" "WELD_DURATION"
+			(at 136.652 171.196 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -7587,6 +7628,85 @@
 			(project "dk-spot-welder"
 				(path "/5fad44e9-5a8e-43be-858d-05b41920aa0c"
 					(reference "Q8")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Connector:TestPoint_2Pole")
+		(at 134.62 168.91 0)
+		(unit 1)
+		(body_style 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(dnp no)
+		(uuid "6d2c7578-2c68-49db-99f9-f8c2c4ecbab7")
+		(property "Reference" "TP5"
+			(at 125.476 166.116 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "WELD_BTN"
+			(at 135.128 166.116 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "TestPoint:TestPoint_2Pads_Pitch5.08mm_Drill1.3mm"
+			(at 134.62 168.91 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 134.62 168.91 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "2-polar test point"
+			(at 134.62 168.91 0)
+			(hide yes)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "b0e58cc4-167f-4fe0-8c25-45afda43fe7c")
+		)
+		(pin "2"
+			(uuid "eb6d641a-54e0-4966-bc96-77778593745d")
+		)
+		(instances
+			(project "dk-spot-welder"
+				(path "/5fad44e9-5a8e-43be-858d-05b41920aa0c"
+					(reference "TP5")
 					(unit 1)
 				)
 			)
