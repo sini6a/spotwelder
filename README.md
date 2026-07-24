@@ -1,179 +1,309 @@
-# Datakonsulten Spot Welder (Open Source Spot Welder)
+# Datakonsulten Spot Welder
 
-Open-source, ATtiny13-controlled spot welder PCB for welding li-ion batteries (e.g. building battery packs), powered from a 12V car battery or other battery pack. Designed in KiCad, fabrication-ready Gerbers included.
+An ATtiny13-controlled battery spot welder designed for welding nickel strip to lithium-ion cells when building or repairing battery packs.
+
+The welder is powered by a 12 V automotive battery or another suitable high-current battery source. The PCB, schematic, firmware, enclosure, and fabrication files are included in this repository.
 
 ![Board render](KiCad/dk-spot-welder.png)
 
-> **⚠️ Status: untested.** This design has not yet been built up or bench-tested — the schematic, PCB, firmware, and enclosure are all believed-correct from design review, but no board has been verified working in hardware yet. Treat it as a work-in-progress until this notice is removed.
+> [!WARNING]
+> This project switches extremely high current from a battery. Incorrect wiring, insufficient conductors, short circuits, or excessive pulse duration can cause fire, burns, damaged cells, destroyed MOSFETs, or battery failure. Read the [Safety](#safety) section before building or operating the welder.
 
 ## Sponsor
 
-PCB fabrication for this project is currently produced by [PCBWay](https://www.pcbway.com/).
+PCB fabrication for this project was sponsored by [PCBWay](https://www.pcbway.com/).
+
+![PCBWay PCBs](Assets/PCBWay.jpg)
 
 ## Features
 
-- **High-current parallel MOSFET switching bank** — 8× IRF1404 N-channel MOSFETs (TO-220) in parallel, each with its own 10 Ω gate resistor for balanced, ring-free switching of the paralleled bank.
-- **Dedicated MOSFET gate driver** — MCP1407 single-channel high-current driver delivers fast, strong gate drive to all 8 FETs simultaneously, with a pull-down (R16) on its input so the FETs default OFF if the MCU isn't actively driving it (fail-safe on reset/power-up).
-- **Automatic touch-to-weld triggering** — a PC817 optocoupler senses when both welding tips touch the metal workpiece (current path between the FET drain and source rails) and signals the MCU to fire a weld pulse — no foot pedal required.
-- **Manual trigger header** — a secondary 2-pin test point (TP4) wired to a spare MCU pin lets you wire up a manual pushbutton/foot switch instead.
-- **ATtiny13-20P microcontroller** — handles trigger detection, weld pulse timing, status LED, and buzzer feedback in a single 8-pin DIP.
-- **Isolated control/power grounds** — the high-current welding ground (`GND`) and the clean logic ground (`CTRL_GND`) are kept separate and joined at a single star point (net-tie) to keep switching noise off the MCU's reference.
-- **Reverse-polarity protected supply** — a Schottky diode (1N5819) protects the onboard L7805 linear regulator (and all logic) if the battery is connected backwards.
-- **Transient/spike suppression** — 4× 5.0SMDJ14A TVS (transil) diodes clamp inductive voltage spikes from the welding cables/electrodes when the FET bank switches off.
-- **Audible + visual feedback** — onboard buzzer and status LED, both driven directly from the ATtiny13.
-- **Direct high-current connections** — power in and weld output are large plated test points/pads (no connector contact resistance), rated for the heavy pulse currents a spot welder demands.
-- **4-layer, 1.6 mm PCB with wide copper traces** — extra internal copper layers (In1.Cu, In2.Cu) used to spread and sink the high pulse currents through the FET bank and ground planes. PCB traces alone are not enough for the full weld current — thick copper wire or busbar is recommended for the battery and electrode connections.
+* **Eight-MOSFET switching bank**
+  Eight IRF1404 N-channel MOSFETs are connected in parallel to switch the welding current. Each MOSFET has an individual 10 Ω gate resistor to help control switching and reduce gate ringing.
+
+* **Dedicated MOSFET gate driver**
+  An MCP1407 drives all eight MOSFET gates simultaneously. A hardware pull-down resistor on the driver input keeps the MOSFET bank off while the microcontroller is starting, resetting, or unpowered.
+
+* **Automatic touch-to-weld triggering**
+  A PC817 optocoupler-based sensing circuit detects when both welding probes are in contact with a conductive workpiece. The isolated output signals the ATtiny13 to begin the welding sequence.
+
+* **Adjustable 1–10 ms main pulse**
+  A pushbutton connected to TP4 cycles the main weld-pulse duration from 1 to 10 ms.
+
+* **EEPROM setting storage**
+  The selected weld duration is saved in the ATtiny13 EEPROM and restored after the welder is disconnected from power.
+
+* **LED and buzzer feedback**
+  The onboard LED and passive piezo buzzer provide startup, welding, and setting-change feedback. When the duration is changed, the LED flashes and the buzzer beeps once for each selected millisecond.
+
+* **Optional double-pulse welding**
+  The firmware can produce a short pre-pulse followed by the adjustable main pulse. The pre-pulse can help settle the probe contact before the main weld.
+
+* **Separated control and power grounds**
+  The high-current welding ground (`GND`) and logic ground (`CTRL_GND`) are routed separately and joined at a single net-tie point to reduce switching noise at the microcontroller.
+
+* **Reverse-polarity protection**
+  A 1N5819 Schottky diode protects the 5 V control supply if the battery input is accidentally connected with reversed polarity.
+
+* **Transient suppression**
+  Four 5.0SMDJ14A TVS diodes help clamp voltage transients generated by the welding cables and other parasitic inductance when the MOSFET bank switches off.
+
+* **Large high-current connection pads**
+  The battery and welding connections use large exposed copper pads intended for soldered or mechanically secured high-current conductors.
+
+* **Four-layer PCB**
+  Copper zones on F.Cu, In1.Cu, In2.Cu, and B.Cu help distribute the short welding-current pulses through the MOSFET bank.
+
+> [!IMPORTANT]
+> PCB copper alone should not be treated as a complete high-current busbar. Thick copper cable, copper braid, copper strip, or another suitable reinforcement is recommended for the main battery and electrode current paths.
 
 ## How it works
 
-1. **Power input** — connect a 12V car battery or battery pack at the `IN/OUT+` and `IN-` test points. Positive is shared straight through to one weld electrode; negative feeds the MOSFET bank's source rail.
-2. **Trigger detection** — when the two welding tips touch the metal workpiece, a small current flows through the workpiece resistance, pulling the `OUT-` rail relative to `GND` enough to forward-bias the PC817's LED. The opto's isolated phototransistor output tells the ATtiny13 "tips are touching, weld now."
-3. **Weld pulse** — the ATtiny13 drives the MCP1407 gate driver input, which simultaneously switches all 8 paralleled IRF1404 MOSFETs on for a precisely-timed pulse (or pulses), dumping a short burst of high current through the workpiece to fuse the nickel strip to the cell.
-4. **Feedback** — the buzzer and LED confirm the weld pulse fired.
-5. **Protection** — reverse-polarity diode, TVS clamps, and the gate pull-down resistor protect the electronics from miswiring, switching transients, and spurious FET turn-on.
+1. **Power input**
+   A 12 V automotive battery or another suitable high-current battery source is connected to the `IN/OUT+` and `IN-` pads.
 
-## Block diagram
+2. **Probe contact detection**
+   When both welding probes contact the conductive workpiece, the PC817 sensing circuit produces an isolated trigger signal for the ATtiny13.
 
-High-level signal/power flow between the major blocks (component references in parentheses):
+3. **Trigger validation**
+   The firmware verifies that the contact signal remains active for the configured debounce period.
 
-```mermaid
-flowchart TD
-    BAT["12V Battery / Pack"]
+4. **Pre-pulse**
+   When double-pulse mode is enabled, the ATtiny13 briefly activates the MCP1407 and MOSFET bank for the configured pre-pulse duration.
 
-    subgraph PWR["Power Input & Protection"]
-        TP3["TP3: IN/OUT+"]
-        TP1["TP1: IN- (GND)"]
-        D4["D4: 1N5819<br/>reverse-polarity protect"]
-    end
+5. **Pulse gap**
+   The MOSFETs switch off for a short interval before the main pulse.
 
-    subgraph CTRL["Control Electronics (5V, CTRL_GND)"]
-        REG["U2: L7805<br/>5V regulator"]
-        MCU["U3: ATtiny13-20P<br/>MCU"]
-        LED["D5: Status LED"]
-        BUZ["BZ1: Buzzer"]
-        TP4["TP4: Manual trigger header"]
-    end
+6. **Main weld pulse**
+   The MOSFET bank switches on for the selected duration between 1 and 10 ms, passing a short burst of high current through the nickel strip and cell connection.
 
-    subgraph SENSE["Touch-Trigger Sensing (isolated)"]
-        R5["R5"]
-        OPTO["U4: PC817<br/>Optocoupler"]
-    end
+7. **Feedback and cooldown**
+   The buzzer and LED confirm that the weld sequence completed. The firmware then enforces a cooldown period and waits for the probes to be lifted before another weld can begin.
 
-    subgraph DRIVE["Gate Drive"]
-        GDRV["U1: MCP1407<br/>MOSFET gate driver"]
-        GRES["R2, R9-R15<br/>per-FET gate resistors"]
-    end
+## Weld-time adjustment
 
-    subgraph FETBANK["Weld Switch Bank"]
-        FETS["Q1-Q8: 8x IRF1404<br/>(parallel MOSFETs)"]
-        TVS["D1, D2, D3, D6<br/>TVS spike suppression"]
-    end
+TP4 is used to change the main weld-pulse duration.
 
-    TP2["TP2: OUT- (weld output)"]
-    ELEC_A(("Electrode A"))
-    ELEC_B(("Electrode B"))
+Each complete button press advances the setting by 1 ms:
 
-    BAT --> TP3
-    BAT --> TP1
-    TP3 --> ELEC_A
-    TP3 --> D4 --> REG --> MCU
-    REG --> GDRV
-    TP1 --> FETS
-
-    FETS --> TVS
-    FETS --> TP2 --> ELEC_B
-
-    TP2 -. tip touches workpiece .-> R5 --> OPTO
-    OPTO -- isolated trigger signal --> MCU
-
-    MCU -- weld pulse --> GDRV --> GRES --> FETS
-    MCU --> LED
-    MCU --> BUZ
-    TP4 -. manual trigger .-> MCU
+```text
+1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 1 ms
 ```
 
-## Key components (BOM highlights)
+After the value changes:
 
-| Ref | Part | Role |
-|---|---|---|
-| U1 | MCP1407 | High-current MOSFET gate driver |
-| U2 | L7805 | 5 V linear regulator for control electronics |
-| U3 | ATtiny13-20P | Microcontroller — trigger logic, pulse timing, feedback |
-| U4 | PC817 | Optocoupler — isolated tip-touch trigger sensing |
-| Q1–Q8 | IRF1404 | Paralleled welding-current MOSFET switch bank |
-| D1, D2, D3, D6 | 5.0SMDJ14A | TVS diodes — inductive spike suppression |
-| D4 | 1N5819 | Schottky reverse-polarity protection |
-| D5 | LED | Status indicator |
-| BZ1 | Buzzer | Audible weld-complete/feedback tone |
-| TP1 / TP2 / TP3 | Test points | `IN-` / `OUT-` / `IN/OUT+` — power & weld electrode connections |
-| TP4 | 2-pole test point | Optional manual trigger button header |
-| NT1 | Net tie | Single-point bridge between power GND and control GND |
+* The setting is saved to EEPROM.
+* The LED flashes once per selected millisecond.
+* The buzzer beeps at the same time as each flash.
+
+For example, a 6 ms setting produces six LED flashes and six beeps.
+
+The displayed value represents the **main pulse only**. When double-pulse mode is enabled, the fixed pre-pulse is added separately.
+
+## Key components
+
+| Reference      | Component            | Function                                                       |
+| -------------- | -------------------- | -------------------------------------------------------------- |
+| U1             | MCP1407              | High-current MOSFET gate driver                                |
+| U2             | L7805                | 5 V regulator for the control electronics                      |
+| U3             | ATtiny13-20P         | Trigger detection, pulse timing, settings, EEPROM and feedback |
+| U4             | PC817                | Isolated probe-contact detection                               |
+| Q1–Q8          | IRF1404              | Parallel welding-current MOSFET bank                           |
+| D1, D2, D3, D6 | 5.0SMDJ14A           | Transient-voltage suppression                                  |
+| D4             | 1N5819               | Reverse-polarity protection for the control supply             |
+| D5             | LED                  | Status and setting indicator                                   |
+| BZ1            | Passive piezo buzzer | Startup, weld and setting feedback                             |
+| TP1            | High-current pad     | `IN-` battery connection                                       |
+| TP2            | High-current pad     | `OUT-` welding-probe connection                                |
+| TP3            | High-current pad     | Shared `IN/OUT+` connection                                    |
+| TP4            | Two-pin header       | Weld-duration setting button                                   |
+| NT1            | Net tie              | Single-point connection between power and control grounds      |
 
 ## PCB specifications
 
-- **Layers:** 4 (F.Cu, In1.Cu, In2.Cu, B.Cu)
-- **Thickness:** 1.6 mm
-- **Outline:** ~112 × 72 mm
-- **Design tool:** KiCad
-- **Custom parts:** local symbol library (`SpotWelderLib`) and custom footprints (`SpotWelderFootprints.pretty`) for the MCP1407, TO-220-2 horizontal-tab MOSFETs, and SMC TVS diodes
+* **Layers:** 4
+
+  * F.Cu
+  * In1.Cu
+  * In2.Cu
+  * B.Cu
+* **Board thickness:** 1.6 mm
+* **Approximate dimensions:** 112 × 72 mm
+* **Design software:** KiCad
+* **High-current zones:** Present on all four copper layers
+* **Fabrication files:** Gerbers and drill files included
+* **Custom symbol library:** `SpotWelderLib`
+* **Custom footprint library:** `SpotWelderFootprints.pretty`
+
+Custom footprints and models are included for components such as the MCP1407, horizontal TO-220 MOSFET mounting, and SMC TVS diodes.
 
 ## Firmware
 
-`Firmware/main.c` is a from-scratch ATtiny13 firmware that drives every component on the board: the gate driver (weld pulses), both trigger inputs (auto tip-touch via the PC817 and the manual TP4 button), the status LED, and the buzzer. All tunable behavior lives in one `USER CONFIGURATION` block at the top of the file — edit the `#define`s and rebuild, no need to touch the logic below.
+The firmware is located at:
 
-| Define | Default | What it does |
-|---|---|---|
-| `WELD_PULSE_MS` | 18 | Main weld pulse duration |
-| `USE_DOUBLE_PULSE` | 1 | Fire a short pre-pulse before the main pulse |
-| `PRE_PULSE_MS` | 3 | Pre-pulse duration (seats the tips before the main weld) |
-| `PULSE_GAP_MS` | 80 | Gap between pre-pulse and main pulse |
-| `WELD_COOLDOWN_MS` | 800 | Minimum time after a weld before another can fire |
-| `TRIGGER_DEBOUNCE_MS` | 15 | Debounce time on both trigger inputs |
-| `REQUIRE_TRIGGER_RELEASE` | 1 | Require the trigger to go inactive before re-arming (prevents continuous arcing if the tips are left resting on the workpiece) |
-| `BEEP_ON_WELD_MS` / `BEEP_ON_POWERUP_MS` | 60 / 80 | Buzzer feedback lengths |
-| `BUZZER_ACTIVE_TYPE` | 1 | 1 = simple on/off drive for a self-oscillating buzzer (matches BZ1's direct GPIO wiring), 0 = generate a tone for a passive piezo |
-
-Pin mapping (see the comment block in `main.c` for the schematic derivation): PB0 → buzzer, PB1 → status LED, PB2 → manual trigger (TP4), PB3 → opto auto-trigger, PB4 → MCP1407/weld enable. The firmware forces PB4 low before anything else runs, on top of the hardware pull-down (R16) already on that net.
-
-Builds clean with `avr-gcc` at `-Os`: 208 bytes flash (20% of the ATtiny13's 1KB) / 0 bytes RAM with default settings.
-
+```text
+Firmware/main.c
 ```
+
+It directly controls:
+
+* The MCP1407 gate-driver input
+* The PC817 automatic weld trigger
+* The TP4 settings button
+* The status LED
+* The passive piezo buzzer
+* EEPROM storage for the selected duration
+
+The firmware forces the MOSFET-driver control pin low during startup. This works together with the hardware pull-down resistor on the MCP1407 input to reduce the risk of an unintended weld pulse during reset or power-up.
+
+### Default configuration
+
+| Definition                | Default | Description                                          |
+| ------------------------- | ------: | ---------------------------------------------------- |
+| `WELD_PULSE_MIN_MS`       |    1 ms | Lowest selectable main-pulse duration                |
+| `WELD_PULSE_MAX_MS`       |   10 ms | Highest selectable main-pulse duration               |
+| `WELD_PULSE_DEFAULT_MS`   |    6 ms | Used when EEPROM does not contain a valid setting    |
+| `USE_DOUBLE_PULSE`        |       1 | Enables the pre-pulse and main-pulse sequence        |
+| `PRE_PULSE_MS`            |    3 ms | Fixed pre-pulse duration                             |
+| `PULSE_GAP_MS`            |   80 ms | Delay between the pre-pulse and main pulse           |
+| `WELD_COOLDOWN_MS`        |  800 ms | Minimum delay after a weld before re-arming          |
+| `TRIGGER_DEBOUNCE_MS`     |   15 ms | Probe-contact validation time                        |
+| `REQUIRE_TRIGGER_RELEASE` |       1 | Requires the probes to be lifted before another weld |
+| `BEEP_ON_WELD_MS`         |   60 ms | Weld-confirmation tone duration                      |
+| `BUZZER_ACTIVE_TYPE`      |       0 | Configures BZ1 as an externally driven passive piezo |
+| `BUZZER_TONE_HZ`          | 4000 Hz | Normal feedback-tone frequency                       |
+
+Review the values in `Firmware/main.c` before flashing, as development versions may use different pre-pulse and timing defaults.
+
+### Pin mapping
+
+| ATtiny13 pin        | Signal | Function                               |
+| ------------------- | ------ | -------------------------------------- |
+| PB0, physical pin 5 | BZ1    | Passive piezo buzzer using Timer0/OC0A |
+| PB1, physical pin 6 | D5     | Status LED                             |
+| PB2, physical pin 7 | TP4    | Weld-duration settings button          |
+| PB3, physical pin 2 | U4     | PC817 automatic weld trigger           |
+| PB4, physical pin 3 | U1     | MCP1407 weld-enable output             |
+| PB5, physical pin 1 | RESET  | ISP reset input                        |
+
+### Building and flashing
+
+The firmware is built with AVR-GCC and optimized for the ATtiny13's limited 1 KB program memory.
+
+```bash
 cd Firmware
-make            # build spotwelder.hex
-make flash      # build and flash over ISP (default programmer: usbasp)
-make fuses      # program factory-default fuses (9.6MHz int. RC / 8 = 1.2MHz)
+
+make
+make flash
+make fuses
 ```
+
+The default Makefile targets are:
+
+| Command      | Action                                                                                                |
+| ------------ | ----------------------------------------------------------------------------------------------------- |
+| `make`       | Build the firmware and generate the HEX file                                                          |
+| `make flash` | Flash the firmware over ISP                                                                           |
+| `make fuses` | Configure the 9.6 MHz internal oscillator with the divide-by-8 fuse, resulting in a 1.2 MHz CPU clock |
+
+The default programmer configuration may need to be changed in the Makefile when using an Arduino as ISP instead of a USBasp.
 
 ## Enclosure
 
-A two-piece (top + bottom) snap/screw-together enclosure, designed in FreeCAD, sized to house the PCB and wired for external battery and electrode cables.
+A two-piece enclosure is included and was designed in FreeCAD for the Rev A PCB.
 
-| Assembled | Top / bottom split |
-|---|---|
-| ![Enclosure render](Enclosure/enclosure-render.png) | ![Enclosure exploded render](Enclosure/enclosure-render-exploded.png) |
+| Assembled                                           | Top and bottom                                                        |
+| --------------------------------------------------- | --------------------------------------------------------------------- |
+| ![Enclosure render](Enclosure/enclosure-render.png) | ![Exploded enclosure render](Enclosure/enclosure-render-exploded.png) |
 
-- Lid is engraved with "Spot Welder Rev A"
-- 4× mounting bosses (screw points) align the top and bottom halves
-- Side cutout for routing the battery/electrode cables out of the case
-- Source: `Enclosure/SpotWelder.FCStd` (FreeCAD), with `SpotWelder-Top Body w_ Text.step` and `SpotWelder-Bottom Body.step` as neutral STEP exports for 3D printing or import into other CAD tools
+The enclosure includes:
+
+* Four mounting bosses
+* Screw-together top and bottom sections
+* Side openings for the battery and electrode cables
+* Source files for modification and 3D printing
+
+Included files:
+
+```text
+Enclosure/SpotWelder.FCStd
+Enclosure/SpotWelder-Top Body w_ Text.step
+Enclosure/SpotWelder-Bottom Body.step
+```
 
 ## Repository structure
 
-```
-KiCad/        KiCad project — schematic, PCB layout, custom symbols/footprints, 3D model, project backups
-Gerbers/      Fabrication output (Gerbers + drill files) ready to send to a PCB manufacturer
-Firmware/     ATtiny13 firmware (main.c + Makefile)
-Enclosure/    FreeCAD enclosure design (top + bottom body, STEP exports, renders)
+```text
+KiCad/
+├── Schematic
+├── PCB layout
+├── Custom symbols and footprints
+└── 3D models
+
+Gerbers/
+├── Copper layers
+├── Solder mask
+├── Silkscreen
+└── Drill files
+
+Firmware/
+├── main.c
+└── Makefile
+
+Enclosure/
+├── FreeCAD source
+├── STEP exports
+└── Rendered images
+
+Assets/
+└── Project and sponsor images
 ```
 
-## Status
+## Project status
 
-Hardware design (schematic + PCB + fab outputs), firmware, and enclosure are all complete on paper. **Functionality has not yet been tested** — no assembled board has been powered up or used to weld anything yet. PCBs are currently being produced by PCBWay; testing/validation will follow once boards are in hand.
+The Rev A hardware has been assembled, powered, and successfully used for spot welding.
+
+The following core functions have been tested:
+
+* ATtiny13 startup
+* MOSFET gate-driver control
+* Automatic probe-contact triggering
+* Timed welding pulses
+* LED feedback
+* Passive buzzer feedback
+* Welding from a 12 V automotive battery
+
+Firmware improvements and a Rev B hardware redesign are in progress. Future revisions may include changes to the high-current copper layout, busbar reinforcement, connection points, protection circuitry, and mechanical design.
 
 ## Safety
 
-This board switches very high pulse currents from a battery directly through bare MOSFETs and exposed welding tips. Incorrect wiring, a shorted output, or firmware bugs in the pulse timing can cause overheating, fire, or battery damage. Use thick copper wire or busbar for the battery and electrode connections — PCB copper alone is not rated for the full weld current. Build and operate at your own risk, use appropriate fusing/current limiting on your battery source, and never leave the welder connected to a battery unattended. **Since this design is untested, inspect and verify every connection yourself before applying power, and expect to debug issues rather than assume a working result.**
+This welder connects a low-resistance load directly to a battery capable of supplying hundreds of amperes.
+
+Before operating it:
+
+* Use eye protection.
+* Keep the battery away from sparks and molten metal.
+* Use properly crimped or bolted high-current cable connections.
+* Keep battery and electrode cables as short as practical.
+* Use cable with sufficient copper cross-section.
+* Install suitable battery-side short-circuit protection.
+* Check MOSFET orientation before applying power.
+* Verify that the MOSFET gates remain low while idle.
+* Confirm the selected pulse duration before welding.
+* Begin with the lowest pulse setting and increase gradually.
+* Test on scrap material before welding a finished battery pack.
+* Never intentionally touch the welding probes directly together.
+* Never leave the welder connected to a battery unattended.
+
+A successful weld should normally survive a peel test, with the nickel tearing around the weld points rather than separating cleanly from the cell.
+
+The designer and contributors are not responsible for injury, property damage, battery damage, fire, or other losses resulting from construction or use of this project. Build and operate it at your own risk.
 
 ## License
 
-Licensed under **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)** — see [LICENCE.md](LICENCE.md). You're free to build, modify, and share this design for personal/non-commercial use with attribution and share-alike. Commercial manufacturing and resale of boards based on this design is reserved to Datakonsulten Sverige AB; contact us if you'd like to discuss a commercial license.
+This project is licensed under the **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International license**.
+
+See [LICENCE.md](LICENCE.md) for the complete terms.
+
+You may build, modify, and share the design for personal and non-commercial use, provided that attribution is retained and derivative works use the same license.
+
+Commercial production or resale of boards based on this design requires permission from Datakonsulten Sverige AB.
