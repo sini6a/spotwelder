@@ -4,7 +4,8 @@ An ATtiny13-controlled battery spot welder designed for welding nickel strip to 
 
 The welder is powered by a 12 V car battery or another suitable high-current battery source. The PCB, schematic, firmware, enclosure, and fabrication files are included in this repository.
 
-![Board render](Assets/IMG_20260727_140404.jpg)
+![Board Assembly](Assets/IMG_20260727_140404.jpg)
+![Board render](KiCad/dk-spot-welder.png)
 
 > [!WARNING]
 > This project switches extremely high current from a battery. Incorrect wiring, insufficient conductors, short circuits, or excessive pulse duration can cause fire, burns, damaged cells, destroyed MOSFETs, or battery failure.
