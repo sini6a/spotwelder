@@ -1,6 +1,6 @@
 # Open Source Spot Welder
 
-An ATtiny13-controlled battery spot welder designed for welding nickel strip to lithium-ion cells when building or repairing battery packs.
+An easy-to-assemble, through-hole spot welder capable of switching high currents for welding nickel strip to lithium-ion cells. Controlled by an ATtiny13 microcontroller.
 
 The welder is powered by a 12 V car battery or another suitable high-current battery source. The PCB, schematic, firmware, enclosure, and fabrication files are included in this repository.
 
