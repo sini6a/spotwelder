@@ -1,13 +1,13 @@
-# Datakonsulten Spot Welder
+# Open Source Spot Welder
 
 An ATtiny13-controlled battery spot welder designed for welding nickel strip to lithium-ion cells when building or repairing battery packs.
 
-The welder is powered by a 12 V automotive battery or another suitable high-current battery source. The PCB, schematic, firmware, enclosure, and fabrication files are included in this repository.
+The welder is powered by a 12 V car battery or another suitable high-current battery source. The PCB, schematic, firmware, enclosure, and fabrication files are included in this repository.
 
-![Board render](KiCad/dk-spot-welder.png)
+![Board render](Assets/IMG_20260727_140404.jpg)
 
 > [!WARNING]
-> This project switches extremely high current from a battery. Incorrect wiring, insufficient conductors, short circuits, or excessive pulse duration can cause fire, burns, damaged cells, destroyed MOSFETs, or battery failure. Read the [Safety](#safety) section before building or operating the welder.
+> This project switches extremely high current from a battery. Incorrect wiring, insufficient conductors, short circuits, or excessive pulse duration can cause fire, burns, damaged cells, destroyed MOSFETs, or battery failure.
 
 ## Sponsor
 
@@ -59,7 +59,7 @@ PCB fabrication for this project was sponsored by [PCBWay](https://www.pcbway.co
 ## How it works
 
 1. **Power input**
-   A 12 V automotive battery or another suitable high-current battery source is connected to the `IN/OUT+` and `IN-` pads.
+   A 12 V car battery or another suitable high-current battery source is connected to the `IN/OUT+` and `IN-` pads.
 
 2. **Probe contact detection**
    When both welding probes contact the conductive workpiece, the PC817 sensing circuit produces an isolated trigger signal for the ATtiny13.
@@ -99,43 +99,6 @@ For example, a 6 ms setting produces six LED flashes and six beeps.
 
 The displayed value represents the **main pulse only**. When double-pulse mode is enabled, the fixed pre-pulse is added separately.
 
-## Key components
-
-| Reference      | Component            | Function                                                       |
-| -------------- | -------------------- | -------------------------------------------------------------- |
-| U1             | MCP1407              | High-current MOSFET gate driver                                |
-| U2             | L7805                | 5 V regulator for the control electronics                      |
-| U3             | ATtiny13-20P         | Trigger detection, pulse timing, settings, EEPROM and feedback |
-| U4             | PC817                | Isolated probe-contact detection                               |
-| Q1–Q8          | IRF1404              | Parallel welding-current MOSFET bank                           |
-| D1, D2, D3, D6 | 5.0SMDJ14A           | Transient-voltage suppression                                  |
-| D4             | 1N5819               | Reverse-polarity protection for the control supply             |
-| D5             | LED                  | Status and setting indicator                                   |
-| BZ1            | Passive piezo buzzer | Startup, weld and setting feedback                             |
-| TP1            | High-current pad     | `IN-` battery connection                                       |
-| TP2            | High-current pad     | `OUT-` welding-probe connection                                |
-| TP3            | High-current pad     | Shared `IN/OUT+` connection                                    |
-| TP4            | Two-pin header       | Weld-duration setting button                                   |
-| NT1            | Net tie              | Single-point connection between power and control grounds      |
-
-## PCB specifications
-
-* **Layers:** 4
-
-  * F.Cu
-  * In1.Cu
-  * In2.Cu
-  * B.Cu
-* **Board thickness:** 1.6 mm
-* **Approximate dimensions:** 112 × 72 mm
-* **Design software:** KiCad
-* **High-current zones:** Present on all four copper layers
-* **Fabrication files:** Gerbers and drill files included
-* **Custom symbol library:** `SpotWelderLib`
-* **Custom footprint library:** `SpotWelderFootprints.pretty`
-
-Custom footprints and models are included for components such as the MCP1407, horizontal TO-220 MOSFET mounting, and SMC TVS diodes.
-
 ## Firmware
 
 The firmware is located at:
@@ -174,17 +137,6 @@ The firmware forces the MOSFET-driver control pin low during startup. This works
 
 Review the values in `Firmware/main.c` before flashing, as development versions may use different pre-pulse and timing defaults.
 
-### Pin mapping
-
-| ATtiny13 pin        | Signal | Function                               |
-| ------------------- | ------ | -------------------------------------- |
-| PB0, physical pin 5 | BZ1    | Passive piezo buzzer using Timer0/OC0A |
-| PB1, physical pin 6 | D5     | Status LED                             |
-| PB2, physical pin 7 | TP4    | Weld-duration settings button          |
-| PB3, physical pin 2 | U4     | PC817 automatic weld trigger           |
-| PB4, physical pin 3 | U1     | MCP1407 weld-enable output             |
-| PB5, physical pin 1 | RESET  | ISP reset input                        |
-
 ### Building and flashing
 
 The firmware is built with AVR-GCC and optimized for the ATtiny13's limited 1 KB program memory.
@@ -209,7 +161,7 @@ The default programmer configuration may need to be changed in the Makefile when
 
 ## Enclosure
 
-A two-piece enclosure is included and was designed in FreeCAD for the Rev A PCB.
+A two-piece enclosure is included and was designed in FreeCAD. 3xM4 Nuts should be installed while printing the enclosure.
 
 | Assembled                                           | Top and bottom                                                        |
 | --------------------------------------------------- | --------------------------------------------------------------------- |
@@ -226,41 +178,15 @@ Included files:
 
 ```text
 Enclosure/SpotWelder.FCStd
-Enclosure/SpotWelder-Top Body w_ Text.step
-Enclosure/SpotWelder-Bottom Body.step
-```
-
-## Repository structure
-
-```text
-KiCad/
-├── Schematic
-├── PCB layout
-├── Custom symbols and footprints
-└── 3D models
-
-Gerbers/
-├── Copper layers
-├── Solder mask
-├── Silkscreen
-└── Drill files
-
-Firmware/
-├── main.c
-└── Makefile
-
-Enclosure/
-├── FreeCAD source
-├── STEP exports
-└── Rendered images
-
-Assets/
-└── Project and sponsor images
+Enclosure/Top Body.step
+Enclosure/Bottom Body.step
 ```
 
 ## Project status
 
 The Rev A hardware has been assembled, powered, and successfully used for spot welding.
+
+![Battery weld](Assets/IMG_20260727_135537.jpg)
 
 The following core functions have been tested:
 
@@ -270,33 +196,7 @@ The following core functions have been tested:
 * Timed welding pulses
 * LED feedback
 * Passive buzzer feedback
-* Welding from a 12 V automotive battery
-
-Firmware improvements and a Rev B hardware redesign are in progress. Future revisions may include changes to the high-current copper layout, busbar reinforcement, connection points, protection circuitry, and mechanical design.
-
-## Safety
-
-This welder connects a low-resistance load directly to a battery capable of supplying hundreds of amperes.
-
-Before operating it:
-
-* Use eye protection.
-* Keep the battery away from sparks and molten metal.
-* Use properly crimped or bolted high-current cable connections.
-* Keep battery and electrode cables as short as practical.
-* Use cable with sufficient copper cross-section.
-* Install suitable battery-side short-circuit protection.
-* Check MOSFET orientation before applying power.
-* Verify that the MOSFET gates remain low while idle.
-* Confirm the selected pulse duration before welding.
-* Begin with the lowest pulse setting and increase gradually.
-* Test on scrap material before welding a finished battery pack.
-* Never intentionally touch the welding probes directly together.
-* Never leave the welder connected to a battery unattended.
-
-A successful weld should normally survive a peel test, with the nickel tearing around the weld points rather than separating cleanly from the cell.
-
-The designer and contributors are not responsible for injury, property damage, battery damage, fire, or other losses resulting from construction or use of this project. Build and operate it at your own risk.
+* Welding from a 12 V car battery
 
 ## License
 
